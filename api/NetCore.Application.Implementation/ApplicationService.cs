@@ -29,17 +29,17 @@ namespace NetCore.Application.Implementation
             ValidateRequest(request);            
             try
             {
-                using (var con = dbConnection)
+                using (var connection = dbConnection)
                 {
-                    con.Open();
-                    wrapper = await InsertApplicationToDB(con, wrapper);
+                    connection.Open();
+                    wrapper = await InsertApplicationToDB(connection, wrapper);
                 }
                 CreateRegistrationResponse(wrapper);
             }
             catch (Exception ex)
             {
                 logger.LogError(ex.Message);
-                throw ex;
+                throw ApplicationException.RegistrationFails;
             }
             return wrapper.response;
         }
@@ -52,17 +52,17 @@ namespace NetCore.Application.Implementation
             return wrapper;
         }
 
-        private async Task<RegistrationUserWrapper> InsertApplicationToDB(IDbConnection con, RegistrationUserWrapper wrapper)
+        private async Task<RegistrationUserWrapper> InsertApplicationToDB(IDbConnection connection, RegistrationUserWrapper wrapper)
         {
             RegisterUser _criteria = CreateInputCriteriaForRegistration(wrapper.request);
             wrapper.criteria = _criteria;
-            DBProperties dbProps = new DBProperties(con, null);
-            using (IDbTransaction tran = con.BeginTransaction(System.Data.IsolationLevel.ReadCommitted))
+            DBProperties dbProps = new DBProperties(connection, null);
+            using (IDbTransaction tran = dbProps.con.BeginTransaction(System.Data.IsolationLevel.ReadCommitted))
             {
-                dbProps = new DBProperties(con, tran);
+                dbProps = new DBProperties(dbProps.con, tran);
                 try
                 {
-                    int result = await ApplicationQueries.RegisterUserInDB(dbProps, wrapper.criteria);
+                    int result = await ApplicationQueries.RegisterUserInDB(dbProps, wrapper);
                     ValidateResultFromDB(result, wrapper.response);
                     dbProps.tran.Commit();
                     dbProps.con.Close();
@@ -93,7 +93,7 @@ namespace NetCore.Application.Implementation
             if (result != 1)
             {
                 response.IsCreated = false;
-                throw new Exception("There is an issue with the registration. Please try again.");
+                throw ApplicationException.RegistrationFails;
             }
             else response.IsCreated = true;
         }
@@ -108,7 +108,7 @@ namespace NetCore.Application.Implementation
         {
             logger.LogError(ex.Message);
             tran.Rollback();
-            throw new Exception("There is an issue with the registration. Please try again.");
+            throw TechnicalException.DbFails;
         }
 
         #endregion
